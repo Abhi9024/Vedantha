@@ -1,0 +1,9 @@
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Core\bin\Debug\BusinessModel.Core.dll.config
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Core\bin\Debug\BusinessModel.Core.dll
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Core\bin\Debug\BusinessModel.Core.pdb
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Core\bin\Debug\EntityFramework.dll
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Core\bin\Debug\EntityFramework.SqlServer.dll
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Core\bin\Debug\EntityFramework.xml
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Core\bin\Debug\EntityFramework.SqlServer.xml
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Core\obj\Debug\BusinessModel.Core.dll
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Core\obj\Debug\BusinessModel.Core.pdb

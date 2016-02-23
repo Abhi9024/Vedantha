@@ -1,0 +1,12 @@
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\obj\Debug\BusinessModel.Repository.csprojResolveAssemblyReference.cache
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\bin\Debug\BusinessModel.Repository.dll.config
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\bin\Debug\BusinessModel.Repository.dll
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\bin\Debug\BusinessModel.Repository.pdb
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\bin\Debug\BusinessModel.Core.dll
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\bin\Debug\EntityFramework.dll
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\bin\Debug\EntityFramework.SqlServer.dll
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\bin\Debug\BusinessModel.Core.pdb
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\bin\Debug\EntityFramework.xml
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\bin\Debug\EntityFramework.SqlServer.xml
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\obj\Debug\BusinessModel.Repository.dll
+D:\Vedantha\Vedantha.Net\Vedantha.MVC\VedaStore\BusinessModel.Repository\obj\Debug\BusinessModel.Repository.pdb
