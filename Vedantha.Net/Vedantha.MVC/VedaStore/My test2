@@ -1,0 +1,214 @@
+using System;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Data.Entity.Infrastructure.Design;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Threading.Tasks;
+using System.Xml.Linq;
+using ApiServices;
+using DomainCore.Entities;
+using ORM.EntFrameMap;
+using System.Configuration;
+using System.Text.RegularExpressions;
+
+namespace AlsoXmlIntegrator
+{
+    public class ALSO
+    {
+        readonly string _username;
+        readonly string _password;
+        private readonly ProductService _productService;
+        public decimal MaxValue { get; set; }
+        public decimal CurrentValue { get; set; }
+
+        public ALSO(ProductService productService)
+        {
+            this._productService = productService;
+            this._username = ConfigurationManager.AppSettings["username"];
+            this._password = ConfigurationManager.AppSettings["password"]; 
+        }
+
+        public Decimal GetProgressValue()
+        {
+            if(MaxValue!=0)
+            return (CurrentValue / MaxValue);
+            return 0;
+        }
+        public virtual void CallAlsoWebService()
+        {
+            GetProductCatalog();
+        }
+
+        private void GetProductCatalog()
+        {
+            byte[] ByteArray;
+            string url = ConfigurationManager.AppSettings["serviceUrl"];
+            string postData = CreateAlsoPostDataForProductCatalog(DateTime.Now);
+            ByteArray = Encoding.UTF8.GetBytes(postData);
+
+            HttpWebRequest webRequestForProductCatalog = CreateAlsoWebRequestForProductCatalog(url, ByteArray);
+
+            XDocument xmlDoc = GetXmlDocFromProductCatalogResponse(ByteArray, webRequestForProductCatalog);
+
+            var xmlElements = xmlDoc.Descendants("CatalogItem");
+            MaxValue = xmlElements.Count();
+            decimal currentValueOfElementsInserted = 0;
+            foreach (XElement xmlElement in xmlElements)
+            {
+                CurrentValue = currentValueOfElementsInserted++;
+                MapProductCatalogToTables(xmlElement);
+                decimal test=GetProgressValue();
+            }
+
+        }
+
+        string CreateAlsoPostDataForProductCatalog(DateTime date)
+        {
+
+            return "?USERNAME=" + _username + "&PASSWORD=" + _password + "&XML=<CatalogRequest><Date>"+date+"</Date><CatNumber>1001</CatNumber><Route><From><ClientID>10752826</ClientID></From><To><ClientID>0</ClientID></To></Route><Filters><Filter FilterID='StockLevel' Value='OnStock'/><Filter FilterID='Price' Value='WOVAT'/></Filters></CatalogRequest>";
+        }
+
+        HttpWebRequest CreateAlsoWebRequestForProductCatalog(string url, byte[] ByteArray)
+        {
+            HttpWebRequest webRequest = (HttpWebRequest)WebRequest.Create(url);
+            webRequest.ContentType = "application/x-www-form-urlencoded";
+            webRequest.Accept = "text/xml";
+            webRequest.Method = "POST";
+            webRequest.ContentLength = ByteArray.Length;
+            return webRequest;
+        }
+
+        private XDocument GetXmlDocFromProductCatalogResponse(byte[] ByteArray, HttpWebRequest webRequestForProductCatalog)
+        {
+            Stream dataStream = webRequestForProductCatalog.GetRequestStream();
+            dataStream.Write(ByteArray, 0, ByteArray.Length);
+            dataStream.Close();
+            XDocument xmlDoc;
+            using (WebResponse webResponse = webRequestForProductCatalog.GetResponse())
+            {
+                xmlDoc = XDocument.Load(webResponse.GetResponseStream());
+            }
+            return xmlDoc;
+        }
+
+
+        private void MapProductCatalogToTables(XElement xmlElement)
+        {
+            var product = new Product();
+            var supply = new Supply();
+            var manufacturer = new Manufacturer();
+            var category = new ProductCategory();
+
+            supply.SupplierProductCode = xmlElement.Element("Product").Element("ProductID").Value;
+            product.ManufacturerProductCode = xmlElement.Element("Product").Element("PartNumber").Value;
+            product.EAN = xmlElement.Element("Product").Element("EANCode").Value;
+            product.Description = xmlElement.Element("Product").Element("Description").Value;
+            product.LongDescription = xmlElement.Element("Product").Element("LongDesc").Value;
+            manufacturer.ManufacturerName = (from s in xmlElement.Element("Product").Element("Grouping").Descendants("GroupBy")
+                                             where s.FirstAttribute.Value == "VendorID"
+                                             select s.LastAttribute.Value).Single().ToString();
+
+            product.ProductCategoryName = (from s in xmlElement.Element("Product").Element("Grouping").Descendants("GroupBy")
+                                           where s.FirstAttribute.Value == "ClassID"
+                                           select s.LastAttribute.Value).Single().ToString();
+
+            supply.Amount = Convert.ToDecimal(xmlElement.Element("Qty").Element("QtyAvailable").Value);
+          
+            if (xmlElement.Element("Qty").Element("DateArriveToLocalWH")!= null)
+            supply.ExpectedToStock = Convert.ToDateTime(xmlElement.Element("Qty").Element("DateArriveToLocalWH").Value);
+
+            supply.Price = Convert.ToDecimal(xmlElement.Element("Price").Element("UnitPrice").Value);
+
+
+            
+
+            product.Supplies.Add(supply);
+            _productService.CreateNonExistingProduct(product);
+
+            _productService.CreateNonExistingManufacturer(manufacturer);
+
+            GetProductSpec(product.ManufacturerProductCode);
+        }
+
+      
+        private void GetProductSpec(string partNumber)
+        {
+            byte[] ByteArrayForSpec;
+            string url = ConfigurationManager.AppSettings["serviceUrl"];
+            string postData = CreateAlsoPostDataForProdSpec(partNumber,DateTime.Now);
+            ByteArrayForSpec = Encoding.UTF8.GetBytes(postData);
+
+           HttpWebRequest webRequestForProductSpec = CreateAlsoWebRequestForSpec(url, ByteArrayForSpec);
+
+           XDocument xmlDoc = GetXmlDocFromProductSpecResponse(ByteArrayForSpec, webRequestForProductSpec);
+
+           var xmlElements = xmlDoc.Descendants("ProductDetails");
+
+            foreach (XElement xmlElement in xmlElements)
+            {
+               MapProductSpecToTables(xmlElement,partNumber);
+            }
+        }
+
+
+        string CreateAlsoPostDataForProdSpec(string partNumber, DateTime date)
+        {
+            return "?USERNAME=" + _username + "&PASSWORD=" + _password + "&XML=<ProductSpecRequest><Date>" + date + "</Date><Route><From><ClientID>10752826</ClientID></From><To><ClientID>0</ClientID></To></Route><Language>ENG</Language><PartNumber>" + partNumber + "</PartNumber></ProductSpecRequest>";
+        }
+
+        private HttpWebRequest CreateAlsoWebRequestForSpec(string url, byte[] ByteArrayForSpec)
+        {
+            HttpWebRequest webRequest = (HttpWebRequest)WebRequest.Create(url);
+            webRequest.ContentType = "application/x-www-form-urlencoded";
+            webRequest.Accept = "text/xml";
+            webRequest.Method = "POST";
+            webRequest.ContentLength = ByteArrayForSpec.Length;
+            return webRequest;
+        }
+
+
+        private XDocument GetXmlDocFromProductSpecResponse(byte[] ByteArray2, HttpWebRequest webRequestForProductSpec)
+        {
+            Stream dataStream = webRequestForProductSpec.GetRequestStream();
+            dataStream.Write(ByteArray2, 0, ByteArray2.Length);
+            dataStream.Close();
+            XDocument xmlDoc;
+            using (WebResponse webResponse = webRequestForProductSpec.GetResponse())
+            {
+                xmlDoc = XDocument.Load(webResponse.GetResponseStream());
+            }
+            return xmlDoc;
+        }
+
+        private void MapProductSpecToTables(XElement xmlElement, string partNumber)
+        {
+            var productToUpdateSpec=new Product();
+            var productResource = new ProductResources();
+            var listOfProduct = _productService.Find(p=>p.ManufacturerProductCode==partNumber);
+            if (listOfProduct.Count > 0)
+            {
+                productToUpdateSpec = listOfProduct.FirstOrDefault();
+               
+                productToUpdateSpec.WeightKg = Convert.ToDecimal(xmlElement.Element("Weight").Value);
+                productToUpdateSpec.SizeXcm = Convert.ToDecimal(xmlElement.Element("Height").Value);
+                productToUpdateSpec.SizeYcm = Convert.ToDecimal(xmlElement.Element("Length").Value);
+                productToUpdateSpec.SizeZcm = Convert.ToDecimal(xmlElement.Element("Width").Value);
+
+
+                if (xmlElement.Element("ProductLinks") != null)
+                {
+                    productResource.ProductResource = xmlElement.Element("ProductLinks").Element("Link").Element("Value").Value;
+                    productResource.ProductId = productToUpdateSpec.ProductId;
+
+                    _productService.CreateProductResource(productResource);
+                }
+
+                _productService.Update(productToUpdateSpec);
+              
+            }      
+        }                
+    }
+}
