@@ -1,0 +1,395 @@
+using ApiServices;
+using DomainCore.Entities;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Threading.Tasks;
+using System.Xml;
+using System.Xml.Linq;
+
+
+namespace AcmeXmlIntegrator
+{
+    public class ACME
+    {
+        private readonly ProductService _productService;
+        private readonly CategoryService _categoryService;
+
+        public ACME(ProductService productService, CategoryService categoryService)
+        {
+            _productService = productService;
+            _categoryService = categoryService;
+        }
+        public void CallAcmeWebService()
+        {
+            GetProductClassification();
+            GetVendorList();
+            GetProductList();
+          
+        }
+      
+        public virtual HttpWebRequest CreateAcmeWebRequest(string url, string action)
+        {
+            HttpWebRequest webRequest = (HttpWebRequest)WebRequest.Create(url);
+            webRequest.Headers.Add("SOAPAction", action);
+            webRequest.ContentType = "text/xml;charset=\"utf-8\"";
+            webRequest.Accept = "text/xml";
+            webRequest.Method = "POST";
+            return webRequest;
+        }
+
+       
+
+        public virtual void InsertSoapDataIntoWebRequest(XmlDocument soapEnvelopeXml, HttpWebRequest webRequest)
+        {
+            using (Stream stream = webRequest.GetRequestStream())
+            {
+                soapEnvelopeXml.Save(stream);
+            }
+        }
+
+
+
+          public virtual void GetProductList()
+        {
+            const string url = "https://api.acme.lt/1.0/commerce.asmx";
+            const string action = "http://schemas.acme.eu/GetProductList";
+
+            XmlDocument soapXmlData = CreateSoapEnvelopeToGetProductList();
+            HttpWebRequest webRequest = CreateAcmeWebRequest(url, action);
+            InsertSoapDataIntoWebRequest(soapXmlData, webRequest);
+
+            XDocument xmlDoc;
+            using (WebResponse webResponse = webRequest.GetResponse())
+            {
+                xmlDoc = XDocument.Load(webResponse.GetResponseStream());
+            }
+            XNamespace ns = "http://schemas.acme.eu/";
+
+            var xmlElements = xmlDoc.Descendants(ns + "Product");
+            Dictionary<string, Product> productListWithSupplierCode=new Dictionary<string,Product>();
+            foreach (XElement xmlElement in xmlElements)
+            {
+                var product = new Product();
+                var supply = new Supply();
+
+                supply.SupplierProductCode = xmlElement.Element(ns + "SupplierCode").Value;
+                product.ProductCategoryName = xmlElement.Element(ns + "SegmentId").Value;
+                product.ProductCategoryName = xmlElement.Element(ns + "GroupId").Value;
+                product.ProductCategoryName = xmlElement.Element(ns + "ClassId").Value;
+                product.ProductCategoryName = xmlElement.Element(ns + "SeriesId").Value;
+
+                string seriesid = xmlElement.Element(ns + "SeriesId").Value;
+               var category= _categoryService.Find(c=>c.XmlServiceCategoryId==seriesid).FirstOrDefault();
+               product.ProductCategoryName = category.ProductCategoryName;
+                //product.ManufacturerId = Convert.ToInt32(xmlElement.Element(ns + "VendorId").Value);
+                product.ProductName = xmlElement.Element(ns + "Name").Value;
+                product.ManufacturerProductCode = xmlElement.Element(ns + "PartNumber").Value;
+                supply.Price = Convert.ToDecimal(xmlElement.Element(ns + "Price").Value);
+                supply.Amount =Convert.ToDecimal(xmlElement.Element(ns + "Quantity").Value);
+                product.WeightKg = Convert.ToDecimal(xmlElement.Element(ns + "GrossWeight").Value);
+                supply.ExpectedToStock = Convert.ToDateTime(xmlElement.Element(ns + "DateExpected").Value);
+
+                product.Supplies.Add(supply);
+                _productService.CreateNonExistingProduct(product);
+
+
+
+
+               string SupplierCode = xmlElement.Element(ns + "SupplierCode").Value;
+               Product getSavedProduct = _productService.Find(p => p.ManufacturerProductCode == product.ManufacturerProductCode).FirstOrDefault();
+
+               productListWithSupplierCode.Add(SupplierCode, getSavedProduct);
+
+               
+            }
+            ProductResources(productListWithSupplierCode);
+            ProductSpecifications(productListWithSupplierCode);
+            //GetProductSpecification(SupplierCode, getSavedProduct);
+
+            //GetProductResources(SupplierCode, getSavedProduct);
+        }
+
+          private void ProductSpecifications(Dictionary<string, Product> productListWithSupplierCode)
+          {
+              foreach (var dictionaryItem in productListWithSupplierCode)
+              {
+                  string SupplierCode = dictionaryItem.Key;
+                  Product productToAddProductResourcesInformation = dictionaryItem.Value;
+                  GetProductSpecification(SupplierCode, productToAddProductResourcesInformation);
+              } 
+          }
+
+          private void ProductResources(Dictionary<string, Product> productListWithSupplierCode)
+          {
+              foreach (var dictionaryItem in productListWithSupplierCode)
+              {
+                  string SupplierCode = dictionaryItem.Key;
+                  Product productToAddProductResourcesInformation = dictionaryItem.Value;
+                  GetProductResources(SupplierCode, productToAddProductResourcesInformation);
+              } 
+          }
+
+        private void GetProductResources(string SupplierCode, Product productToAddProductResourcesInformation)
+        {
+ 	        const string url = "https://api.acme.lt/1.0/commerce.asmx";
+            const string action = "http://schemas.acme.eu/GetProductResources";
+
+           
+            XmlDocument soapXmlData1 = CreateSoapEnvelopeToGetProductResources(SupplierCode);
+            HttpWebRequest webRequest1 = CreateAcmeWebRequest(url, action);
+            InsertSoapDataIntoWebRequest(soapXmlData1, webRequest1);
+
+            XDocument xmlDoc1;
+            using (WebResponse webResponse1 = webRequest1.GetResponse())
+            {
+                xmlDoc1 = XDocument.Load(webResponse1.GetResponseStream());
+            }
+            XNamespace ns = "http://schemas.acme.eu/";
+
+            var xmlElements = xmlDoc1.Descendants(ns + "ProductResources");
+            foreach (XElement xmlElement in xmlElements)
+            {
+                var productResource = new ProductResources();
+                productResource.ProductResource = xmlElement.Element(ns+"SupplierCode").Value;
+                productResource.ProductId = productToAddProductResourcesInformation.ProductId;
+                int counter = 0;
+                var xElement = xmlDoc1.Descendants(ns + "ProductResource");
+                foreach (XElement element in xElement)
+                {
+                    string sourceUrl = xmlElement.Element(ns + "ResourceURL").Value;
+                    string localPath = @"C:\Users\admin\Desktop\Books\url\" + SupplierCode + "-" + counter++ + ".jpg";
+                    using (WebClient wc = new WebClient())
+                    {
+                        wc.DownloadFile(sourceUrl, localPath);
+                    }
+                }
+
+                _productService.CreateProductResource(productResource);
+            }
+        }
+
+
+       public void GetProductSpecification(string supplierCode,Product productToAddSpecificationInformation)
+        {
+            const string url = "https://api.acme.lt/1.0/commerce.asmx";
+            const string action = "http://schemas.acme.eu/GetProductSpecification";
+
+
+            XmlDocument soapXmlData1 = CreateSoapEnvelopeToGetProductSpecification(supplierCode);
+            HttpWebRequest webRequest1 = CreateAcmeWebRequest(url, action);
+            InsertSoapDataIntoWebRequest(soapXmlData1, webRequest1);
+
+            XDocument xmlDoc1;
+            using (WebResponse webResponse1 = webRequest1.GetResponse())
+            {
+                xmlDoc1 = XDocument.Load(webResponse1.GetResponseStream());
+            }
+            XNamespace ns = "http://schemas.acme.eu/";
+
+            var xmlElements = xmlDoc1.Descendants(ns + "ProductSpecification");
+            List<ProductSpecification> prodSpecList = new List<ProductSpecification>();
+            foreach (XElement xmlElement in xmlElements)
+            {
+               
+               var suppliercode = xmlElement.Element(ns + "SupplierCode").Value;
+
+               var productSearch = _productService.Find(p=>p.ManufacturerProductCode==suppliercode);
+
+                var propertyElements = xmlElement.Descendants(ns + "ProductProperty");
+                foreach (XElement propertyElement in propertyElements)
+                {
+                    var productProperty = new ProductProperty();
+                    var productSpecification = new ProductSpecification();
+                
+                   productProperty.ProductPropertyName = propertyElement.Element(ns + "PropertyName").Value.ToString();
+
+                   productSpecification.StringValue = propertyElement.Element(ns + "PropertyValue").Value.ToString();
+                   productSpecification.ProductId = productToAddSpecificationInformation.ProductId;
+
+                   productProperty.ProductSpecifications.Add(productSpecification);
+                  
+                       _productService.CreateProductProperty(productProperty);
+                  
+                }
+            }          
+        }
+
+        private void GetVendorList()
+        {
+ 	       const string url = "https://api.acme.lt/1.0/commerce.asmx";
+           const string action = "http://schemas.acme.eu/GetVendorList";
+
+
+            XmlDocument soapXmlData1 = CreateSoapEnvelopeToGetProductClassification();
+            HttpWebRequest webRequest1 = CreateAcmeWebRequest(url, action);
+            InsertSoapDataIntoWebRequest(soapXmlData1, webRequest1);
+
+            XDocument xmlDoc1;
+            using (WebResponse webResponse1 = webRequest1.GetResponse())
+            {
+                xmlDoc1 = XDocument.Load(webResponse1.GetResponseStream());
+            }
+            XNamespace ns = "http://schemas.acme.eu/";
+
+            var xmlElements = xmlDoc1.Descendants(ns + "Vendor");
+            foreach (XElement xmlElement in xmlElements)
+            {
+                var manufacturer = new Manufacturer();
+                manufacturer.ManufacturerName = xmlElement.Element(ns+"VendorName").Value;
+
+                _productService.CreateNonExistingManufacturer(manufacturer);
+            }
+        }
+
+        private void GetProductClassification()
+        {
+            const string url = "https://api.acme.lt/1.0/commerce.asmx";
+            const string action = "http://schemas.acme.eu/GetProductClassification";
+
+
+            XmlDocument soapXmlData1 = CreateSoapEnvelopeToGetProductClassification();
+            HttpWebRequest webRequest1 = CreateAcmeWebRequest(url, action);
+            InsertSoapDataIntoWebRequest(soapXmlData1, webRequest1);
+
+            XDocument xmlDoc1;
+            using (WebResponse webResponse1 = webRequest1.GetResponse())
+            {
+                xmlDoc1 = XDocument.Load(webResponse1.GetResponseStream());
+            }
+            XNamespace ns = "http://schemas.acme.eu/";
+
+            var xmlElements = xmlDoc1.Descendants(ns + "GetProductClassificationResult");
+
+            var xmlElementForSegmentList = xmlDoc1.Descendants(ns + "Segment");
+
+
+
+            foreach (XElement xmlElement in xmlElementForSegmentList)
+            {
+                ProductCategory productCategory = new ProductCategory();
+
+           productCategory.ProductCategoryName = xmlElement.Element(ns + "SegmentName").Value;
+           productCategory.XmlServiceCategoryId = xmlElement.Element(ns + "SegmentId").Value;
+
+           string segmentId = xmlElement.Element(ns + "SegmentId").Value;
+
+           var grouplist = GetGroupList(xmlDoc1, segmentId);
+           productCategory.ChildProductCategories = grouplist;
+
+           _categoryService.CreateNonExistingCategory(productCategory);
+
+            }
+           
+        }
+
+        private List<ProductCategory> GetGroupList(XDocument xmlDoc1,string segmentId)
+        {
+            XNamespace ns = "http://schemas.acme.eu/";
+            var xmlElementForGroupList = xmlDoc1.Descendants(ns + "Group");
+            List<ProductCategory> productCategoryList = new List<ProductCategory>();
+            foreach (XElement xmlElement in xmlElementForGroupList)
+            {
+                string segid=xmlElement.Element(ns + "SegmentId").Value;
+                if (segid == segmentId)
+                {
+                    var productCategory = new ProductCategory();
+                    productCategory.ProductCategoryName = xmlElement.Element(ns + "GroupName").Value;
+                    productCategory.XmlServiceCategoryId = xmlElement.Element(ns + "GroupId").Value;
+
+                    string groupId=xmlElement.Element(ns + "GroupId").Value;
+                    var classList = GetClassList(xmlDoc1, groupId);
+                    productCategory.ChildProductCategories = classList;
+
+                    productCategoryList.Add(productCategory);
+                }
+               
+            }
+            return productCategoryList;
+        }
+
+        private List<ProductCategory> GetClassList(XDocument xmlDoc1, string groupId)
+        {
+            XNamespace ns = "http://schemas.acme.eu/";
+            var xmlElementForGroupList = xmlDoc1.Descendants(ns + "Class");
+            List<ProductCategory> productCategoryList = new List<ProductCategory>();
+            foreach (XElement xmlElement in xmlElementForGroupList)
+            {
+                string grpid = xmlElement.Element(ns + "GroupId").Value;
+                if (grpid == groupId)
+                {
+                    var productCategory = new ProductCategory();
+                    productCategory.ProductCategoryName = xmlElement.Element(ns + "ClassName").Value;
+                    productCategory.XmlServiceCategoryId = xmlElement.Element(ns + "ClassId").Value;
+
+                    string classId = xmlElement.Element(ns + "ClassId").Value;
+                    var seriesList = GetSeriesList(xmlDoc1, classId);
+                    productCategory.ChildProductCategories = seriesList;
+
+                    productCategoryList.Add(productCategory);
+                }
+
+            }
+            return productCategoryList;
+        }
+
+        private List<ProductCategory> GetSeriesList(XDocument xmlDoc1, string classId)
+        {
+            XNamespace ns = "http://schemas.acme.eu/";
+            var xmlElementForGroupList = xmlDoc1.Descendants(ns + "Series");
+            List<ProductCategory> productCategoryList = new List<ProductCategory>();
+            foreach (XElement xmlElement in xmlElementForGroupList)
+            {
+                string clsid = xmlElement.Element(ns + "ClassId").Value;
+                if (clsid == classId)
+                {
+                    var productCategory = new ProductCategory();
+                    productCategory.ProductCategoryName = xmlElement.Element(ns + "SeriesName").Value;
+                    productCategory.XmlServiceCategoryId = xmlElement.Element(ns + "SeriesId").Value;
+
+                    productCategoryList.Add(productCategory);
+                }
+
+            }
+            return productCategoryList;
+        }
+      
+
+        public virtual XmlDocument CreateSoapEnvelopeToGetProductList()
+        {
+            XmlDocument soapEnvelop = new XmlDocument();
+            soapEnvelop.LoadXml(@"<?xml version='1.0' encoding='utf-8'?><soap:Envelope xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/'><soap:Header><LicenseHeader xmlns='http://schemas.acme.eu/'><LicenseKey>498ec72c-e8e7-48f2-b300-d95666aeb141</LicenseKey></LicenseHeader></soap:Header><soap:Body><GetProductList xmlns='http://schemas.acme.eu/'><GetProductListRequest><Filters><Filter><Name>Language</Name><Value>lt-lt</Value></Filter><Filter><Name>Currency</Name><Value>LTL</Value></Filter></Filters></GetProductListRequest></GetProductList></soap:Body></soap:Envelope>");
+            return soapEnvelop;
+        }
+
+        private XmlDocument CreateSoapEnvelopeToGetProductSpecification(string supplierProductCode)
+        {
+            XmlDocument soapEnvelop = new XmlDocument();
+            soapEnvelop.LoadXml(@"<?xml version='1.0' encoding='utf-8'?><soap:Envelope xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/'><soap:Header><LicenseHeader xmlns='http://schemas.acme.eu/'><LicenseKey>498ec72c-e8e7-48f2-b300-d95666aeb141</LicenseKey></LicenseHeader></soap:Header><soap:Body><GetProductSpecification xmlns='http://schemas.acme.eu/'><GetProductSpecificationRequest><Filters><Filter><Name>Language</Name><Value>en-us</Value></Filter><Filter><Name>" + supplierProductCode + "</Name><Value>018704</Value></Filter></Filters></GetProductSpecificationRequest></GetProductSpecification></soap:Body></soap:Envelope>");
+            return soapEnvelop;
+        }
+
+        private XmlDocument CreateSoapEnvelopeToGetProductResources(string supplierProductCode)
+        {
+            XmlDocument soapEnvelop = new XmlDocument();
+            soapEnvelop.LoadXml(@"<?xml version='1.0' encoding='utf-8'?><soap:Envelope xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/'><soap:Header><LicenseHeader xmlns='http://schemas.acme.eu/'><LicenseKey>498ec72c-e8e7-48f2-b300-d95666aeb141</LicenseKey></LicenseHeader></soap:Header><soap:Body><GetProductResources xmlns='http://schemas.acme.eu/'><GetProductResourcesRequest><Filters><Filter><Name>Language</Name><Value>en-us</Value></Filter><Filter><Name>SupplierCode</Name><Value>"+supplierProductCode+"</Value></Filter></Filters></GetProductResourcesRequest></GetProductResources></soap:Body></soap:Envelope>");
+            return soapEnvelop;
+        }
+        private XmlDocument CreateSoapEnvelopeToGetProductClassification()
+        {
+            XmlDocument soapEnvelop = new XmlDocument();
+            soapEnvelop.LoadXml(@"<?xml version='1.0' encoding='utf-8'?><soap:Envelope xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/'><soap:Header><LicenseHeader xmlns='http://schemas.acme.eu/'><LicenseKey>498ec72c-e8e7-48f2-b300-d95666aeb141</LicenseKey></LicenseHeader></soap:Header><soap:Body><GetProductClassification xmlns='http://schemas.acme.eu/'><GetProductClassificationRequest /></GetProductClassification></soap:Body></soap:Envelope>");
+            return soapEnvelop;
+        }
+
+        private XmlDocument CreateSoapEnvelopeToGetVendorList()
+        {
+            XmlDocument soapEnvelop = new XmlDocument();
+            soapEnvelop.LoadXml(@"<?xml version='1.0' encoding='utf-8'?><soap:Envelope xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/'><soap:Header><LicenseHeader xmlns='http://schemas.acme.eu/'><LicenseKey>498ec72c-e8e7-48f2-b300-d95666aeb141</LicenseKey></LicenseHeader></soap:Header><soap:Body><GetVendorList xmlns='http://schemas.acme.eu/'><GetVendorListRequest /></GetVendorList></soap:Body></soap:Envelope>");
+            return soapEnvelop;
+        }
+    }
+}
